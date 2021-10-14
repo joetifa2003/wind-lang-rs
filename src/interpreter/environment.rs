@@ -1,7 +1,6 @@
 use super::RuntimeError;
-use crate::token::Token;
+use crate::{token::Token, types::LiteralType};
 use hashbrown::HashMap;
-use std::{any::Any, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub struct EnvironmentManger {
@@ -11,7 +10,7 @@ pub struct EnvironmentManger {
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    values: HashMap<String, Rc<dyn Any>>,
+    values: HashMap<String, LiteralType>,
 }
 
 impl Environment {
@@ -30,11 +29,11 @@ impl EnvironmentManger {
         }
     }
 
-    pub fn define(&mut self, name: String, value: Rc<dyn Any>) {
+    pub fn define(&mut self, name: String, value: LiteralType) {
         self.environments[0].values.insert(name, value);
     }
 
-    pub fn assign(&mut self, name: Token, value: Rc<dyn Any>) -> Result<(), RuntimeError> {
+    pub fn assign(&mut self, name: Token, value: LiteralType) -> Result<(), RuntimeError> {
         let environment = &mut self.environments[self.index];
 
         if environment.values.contains_key(&name.lexeme) {
@@ -57,7 +56,7 @@ impl EnvironmentManger {
         ))
     }
 
-    pub fn get(&mut self, name: &Token) -> Result<Rc<dyn Any>, RuntimeError> {
+    pub fn get(&mut self, name: &Token) -> Result<LiteralType, RuntimeError> {
         let environment = &self.environments[self.index];
 
         if let Some(value) = environment.values.get(&name.lexeme) {

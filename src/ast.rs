@@ -3,15 +3,8 @@ use std::{any::Any, rc::Rc};
 use crate::{
     interpreter::{Interpreter, RuntimeError},
     token::Token,
+    types::LiteralType,
 };
-
-pub struct NilType;
-
-impl NilType {
-    pub fn new() -> NilType {
-        NilType {}
-    }
-}
 
 pub trait ExprVisitor<T> {
     fn visit_literal_expr(&mut self, expr: &LiteralExpr) -> T;
@@ -37,7 +30,7 @@ pub trait Expr {
     fn accept_interpreter(
         &self,
         interpreter: &mut Interpreter,
-    ) -> Result<Rc<dyn Any>, RuntimeError>;
+    ) -> Result<LiteralType, RuntimeError>;
 
     fn as_any(&self) -> &dyn Any;
 }
@@ -66,7 +59,7 @@ impl Expr for BinaryExpr {
     fn accept_interpreter(
         &self,
         interpreter: &mut Interpreter,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    ) -> Result<LiteralType, RuntimeError> {
         interpreter.visit_binary_expr(self)
     }
 
@@ -89,7 +82,7 @@ impl Expr for GroupExpr {
     fn accept_interpreter(
         &self,
         interpreter: &mut Interpreter,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    ) -> Result<LiteralType, RuntimeError> {
         interpreter.visit_group_expr(self)
     }
 
@@ -99,11 +92,11 @@ impl Expr for GroupExpr {
 }
 
 pub struct LiteralExpr {
-    pub value: Rc<dyn Any>,
+    pub value: LiteralType,
 }
 
 impl LiteralExpr {
-    pub fn new(value: Rc<dyn Any>) -> Rc<LiteralExpr> {
+    pub fn new(value: LiteralType) -> Rc<LiteralExpr> {
         Rc::new(LiteralExpr { value })
     }
 }
@@ -112,7 +105,7 @@ impl Expr for LiteralExpr {
     fn accept_interpreter(
         &self,
         interpreter: &mut Interpreter,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    ) -> Result<LiteralType, RuntimeError> {
         interpreter.visit_literal_expr(self)
     }
 
@@ -136,7 +129,7 @@ impl Expr for UnaryExpr {
     fn accept_interpreter(
         &self,
         interpreter: &mut Interpreter,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    ) -> Result<LiteralType, RuntimeError> {
         interpreter.visit_unary_expr(self)
     }
 
@@ -160,7 +153,7 @@ impl Expr for VariableExpr {
     fn accept_interpreter(
         &self,
         interpreter: &mut Interpreter,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    ) -> Result<LiteralType, RuntimeError> {
         interpreter.visit_variable_expr(self)
     }
 
@@ -184,7 +177,7 @@ impl Expr for AssignExpr {
     fn accept_interpreter(
         &self,
         interpreter: &mut Interpreter,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    ) -> Result<LiteralType, RuntimeError> {
         interpreter.visit_assign_expr(self)
     }
 
@@ -213,7 +206,7 @@ impl Expr for LogicalExpr {
     fn accept_interpreter(
         &self,
         interpreter: &mut Interpreter,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    ) -> Result<LiteralType, RuntimeError> {
         interpreter.visit_logical_expr(self)
     }
 

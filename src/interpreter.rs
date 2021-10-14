@@ -1,15 +1,16 @@
 mod environment;
 
-use std::{
-    any::{Any, TypeId},
-    process,
-    rc::Rc,
-};
+use std::{process, rc::Rc};
 
 use crate::{
-    ast::{Expr, ExprVisitor, NilType, Stmt, StmtVisitor},
+    ast::{
+        AssignExpr, BinaryExpr, BlockStmt, Expr, ExprVisitor, ExpressionStmt, ForRangeStmt,
+        GroupExpr, IfStmt, LiteralExpr, LogicalExpr, PrintStmt, Stmt, StmtVisitor, UnaryExpr,
+        VarDeclStmt, VariableExpr, WhileSmt,
+    },
     error::WindError,
     token::{Token, TokenType},
+    types::LiteralType,
 };
 
 use self::environment::EnvironmentManger;
@@ -73,222 +74,211 @@ impl Interpreter {
         Ok(())
     }
 
-    fn evaluate(&mut self, expr: Rc<dyn Expr>) -> Result<Rc<dyn Any>, RuntimeError> {
+    fn evaluate(&mut self, expr: Rc<dyn Expr>) -> Result<LiteralType, RuntimeError> {
         expr.accept_interpreter(self)
     }
 
-    fn is_truthy(&self, object: Rc<dyn Any>) -> bool {
-        if let Some(value) = object.downcast_ref::<bool>() {
-            return *value;
+    fn is_truthy(&self, object: LiteralType) -> bool {
+        match object {
+            LiteralType::Bool(value) => value,
+            _ => false,
         }
-
-        return false;
     }
 
     fn check_number_operand(
         &self,
         operator: &Token,
-        operand: Rc<dyn Any>,
+        operand: &LiteralType,
     ) -> Result<(), RuntimeError> {
-        if operand.as_ref().type_id() != TypeId::of::<f32>() {
-            return Err(RuntimeError::new(
+        match operand {
+            LiteralType::Number(_) => Ok(()),
+            _ => Err(RuntimeError::new(
                 operator.to_owned(),
                 "operand must be a number".to_string(),
-            ));
+            )),
         }
-
-        Ok(())
     }
 
     fn check_number_operands(
         &self,
         operator: &Token,
-        left: Rc<dyn Any>,
-        right: Rc<dyn Any>,
+        left: &LiteralType,
+        right: &LiteralType,
     ) -> Result<(), RuntimeError> {
-        let float_id = TypeId::of::<f32>();
-
-        if left.as_ref().type_id() != float_id || right.as_ref().type_id() != float_id {
-            return Err(RuntimeError::new(
+        match (left, right) {
+            (LiteralType::Number(_), LiteralType::Number(_)) => Ok(()),
+            _ => Err(RuntimeError::new(
                 operator.to_owned(),
                 "operands must be a number".to_string(),
-            ));
+            )),
         }
-
-        Ok(())
     }
 
     fn is_equal(
         &self,
         operator: &Token,
-        left: Rc<dyn Any>,
-        right: Rc<dyn Any>,
+        left: LiteralType,
+        right: LiteralType,
     ) -> Result<bool, RuntimeError> {
-        if let (Some(left_value), Some(right_value)) =
-            (left.downcast_ref::<f32>(), right.downcast_ref::<f32>())
-        {
-            return Ok(*left_value == *right_value);
+        match (left, right) {
+            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                Ok(left_value == right_value)
+            }
+            (LiteralType::String(left_value), LiteralType::String(right_value)) => {
+                Ok(left_value == right_value)
+            }
+            _ => Err(RuntimeError::new(
+                operator.to_owned(),
+                "cannot compare".to_owned(),
+            )),
         }
-
-        if let (Some(left_value), Some(right_value)) = (
-            left.downcast_ref::<String>(),
-            right.downcast_ref::<String>(),
-        ) {
-            return Ok(*left_value == *right_value);
-        }
-
-        Err(RuntimeError::new(
-            operator.to_owned(),
-            "cannot compare".to_owned(),
-        ))
     }
 }
 
-impl ExprVisitor<Result<Rc<dyn Any>, RuntimeError>> for Interpreter {
-    fn visit_literal_expr(
-        &mut self,
-        expr: &crate::ast::LiteralExpr,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+impl ExprVisitor<Result<LiteralType, RuntimeError>> for Interpreter {
+    fn visit_literal_expr(&mut self, expr: &LiteralExpr) -> Result<LiteralType, RuntimeError> {
         Ok(expr.value.to_owned())
     }
 
-    fn visit_group_expr(
-        &mut self,
-        expr: &crate::ast::GroupExpr,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    fn visit_group_expr(&mut self, expr: &GroupExpr) -> Result<LiteralType, RuntimeError> {
         let value = self.evaluate(expr.expression.to_owned())?;
 
         Ok(value)
     }
 
-    fn visit_unary_expr(
-        &mut self,
-        expr: &crate::ast::UnaryExpr,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    fn visit_unary_expr(&mut self, expr: &UnaryExpr) -> Result<LiteralType, RuntimeError> {
         let right = self.evaluate(expr.right.to_owned())?;
 
         match expr.operator.t_type {
-            TokenType::Bang => Ok(Rc::new(self.is_truthy(right))),
+            TokenType::Bang => Ok(LiteralType::Bool(self.is_truthy(right))),
             TokenType::Minus => {
-                self.check_number_operand(&expr.operator, right.to_owned())?;
-                let value = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(value))
+                self.check_number_operand(&expr.operator, &right)?;
+                match right {
+                    LiteralType::Number(value) => Ok(LiteralType::Number(-value)),
+                    _ => unreachable!(),
+                }
             }
             _ => unreachable!(),
         }
     }
 
-    fn visit_binary_expr(
-        &mut self,
-        expr: &crate::ast::BinaryExpr,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    fn visit_binary_expr(&mut self, expr: &BinaryExpr) -> Result<LiteralType, RuntimeError> {
         let left = self.evaluate(expr.left.to_owned())?;
         let right = self.evaluate(expr.right.to_owned())?;
 
         match expr.operator.t_type {
             TokenType::Minus | TokenType::MinusEqual => {
-                self.check_number_operands(&expr.operator, left.to_owned(), right.to_owned())?;
+                self.check_number_operands(&expr.operator, &left, &right)?;
 
-                let left_number = *left.downcast::<f32>().unwrap();
-                let right_number = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(left_number - right_number))
+                match (left, right) {
+                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                        Ok(LiteralType::Number(left_value - right_value))
+                    }
+                    _ => unreachable!(),
+                }
             }
             TokenType::Slash | TokenType::SlashEqual => {
-                self.check_number_operands(&expr.operator, left.to_owned(), right.to_owned())?;
+                self.check_number_operands(&expr.operator, &left, &right)?;
 
-                let left_number = *left.downcast::<f32>().unwrap();
-                let right_number = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(left_number / right_number))
+                match (left, right) {
+                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                        Ok(LiteralType::Number(left_value / right_value))
+                    }
+                    _ => unreachable!(),
+                }
             }
             TokenType::Star | TokenType::StarEqual => {
-                self.check_number_operands(&expr.operator, left.to_owned(), right.to_owned())?;
+                self.check_number_operands(&expr.operator, &left, &right)?;
 
-                let left_number = *left.downcast::<f32>().unwrap();
-                let right_number = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(left_number * right_number))
+                match (left, right) {
+                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                        Ok(LiteralType::Number(left_value * right_value))
+                    }
+                    _ => unreachable!(),
+                }
             }
             TokenType::Percent | TokenType::PercentEqual => {
-                self.check_number_operands(&expr.operator, left.to_owned(), right.to_owned())?;
+                self.check_number_operands(&expr.operator, &left, &right)?;
 
-                let left_number = *left.downcast::<f32>().unwrap();
-                let right_number = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(left_number % right_number))
+                match (left, right) {
+                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                        Ok(LiteralType::Number(left_value % right_value))
+                    }
+                    _ => unreachable!(),
+                }
             }
             TokenType::Greater => {
-                self.check_number_operands(&expr.operator, left.to_owned(), right.to_owned())?;
+                self.check_number_operands(&expr.operator, &left, &right)?;
 
-                let left_number = *left.downcast::<f32>().unwrap();
-                let right_number = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(left_number > right_number))
+                match (left, right) {
+                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                        Ok(LiteralType::Bool(left_value > right_value))
+                    }
+                    _ => unreachable!(),
+                }
             }
             TokenType::GreaterEqual => {
-                self.check_number_operands(&expr.operator, left.to_owned(), right.to_owned())?;
+                self.check_number_operands(&expr.operator, &left, &right)?;
 
-                let left_number = *left.downcast::<f32>().unwrap();
-                let right_number = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(left_number >= right_number))
+                match (left, right) {
+                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                        Ok(LiteralType::Bool(left_value >= right_value))
+                    }
+                    _ => unreachable!(),
+                }
             }
             TokenType::Less => {
-                self.check_number_operands(&expr.operator, left.to_owned(), right.to_owned())?;
-
-                let left_number = *left.downcast::<f32>().unwrap();
-                let right_number = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(left_number < right_number))
+                self.check_number_operands(&expr.operator, &left, &right)?;
+                match (left, right) {
+                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                        Ok(LiteralType::Bool(left_value < right_value))
+                    }
+                    _ => unreachable!(),
+                }
             }
             TokenType::LessEqual => {
-                self.check_number_operands(&expr.operator, left.to_owned(), right.to_owned())?;
+                self.check_number_operands(&expr.operator, &left, &right)?;
 
-                let left_number = *left.downcast::<f32>().unwrap();
-                let right_number = *right.downcast::<f32>().unwrap();
-
-                Ok(Rc::new(left_number <= right_number))
+                match (left, right) {
+                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                        Ok(LiteralType::Bool(left_value <= right_value))
+                    }
+                    _ => unreachable!(),
+                }
             }
-            TokenType::EqualEqual => Ok(Rc::new(self.is_equal(&expr.operator, left, right)?)),
-            TokenType::BangEqual => Ok(Rc::new(!self.is_equal(&expr.operator, left, right)?)),
-            TokenType::Plus | TokenType::PlusEqual => {
-                if let (Some(left_value), Some(right_value)) =
-                    (left.downcast_ref::<f32>(), right.downcast_ref::<f32>())
-                {
-                    return Ok(Rc::new(*left_value + *right_value));
+            TokenType::EqualEqual => Ok(LiteralType::Bool(self.is_equal(
+                &expr.operator,
+                left,
+                right,
+            )?)),
+            TokenType::BangEqual => Ok(LiteralType::Bool(!self.is_equal(
+                &expr.operator,
+                left,
+                right,
+            )?)),
+            TokenType::Plus | TokenType::PlusEqual => match (left, right) {
+                (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                    Ok(LiteralType::Number(left_value + right_value))
                 }
-
-                if let (Some(left_value), Some(right_value)) = (
-                    left.downcast_ref::<String>(),
-                    right.downcast_ref::<String>(),
-                ) {
+                (LiteralType::String(left_value), LiteralType::String(right_value)) => {
                     let res = [left_value.to_owned(), right_value.to_owned()].join("");
-                    return Ok(Rc::new(res));
+                    Ok(LiteralType::String(res))
                 }
-
-                Err(RuntimeError::new(
+                _ => Err(RuntimeError::new(
                     expr.operator.to_owned(),
                     "cannot add".to_owned(),
-                ))
-            }
+                )),
+            },
 
             _ => unreachable!(),
         }
     }
 
-    fn visit_variable_expr(
-        &mut self,
-        expr: &crate::ast::VariableExpr,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    fn visit_variable_expr(&mut self, expr: &VariableExpr) -> Result<LiteralType, RuntimeError> {
         Ok(self.environment_manager.get(&expr.name)?)
     }
 
-    fn visit_assign_expr(
-        &mut self,
-        expr: &crate::ast::AssignExpr,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    fn visit_assign_expr(&mut self, expr: &AssignExpr) -> Result<LiteralType, RuntimeError> {
         let value = self.evaluate(expr.value.to_owned())?;
 
         self.environment_manager
@@ -297,10 +287,7 @@ impl ExprVisitor<Result<Rc<dyn Any>, RuntimeError>> for Interpreter {
         Ok(value)
     }
 
-    fn visit_logical_expr(
-        &mut self,
-        expr: &crate::ast::LogicalExpr,
-    ) -> Result<Rc<dyn Any>, RuntimeError> {
+    fn visit_logical_expr(&mut self, expr: &LogicalExpr) -> Result<LiteralType, RuntimeError> {
         let left = self.evaluate(expr.left.to_owned())?;
 
         if expr.operator.t_type == TokenType::Or {
@@ -318,47 +305,27 @@ impl ExprVisitor<Result<Rc<dyn Any>, RuntimeError>> for Interpreter {
 }
 
 impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
-    fn visit_expression_smt(
-        &mut self,
-        stmt: &crate::ast::ExpressionStmt,
-    ) -> Result<(), RuntimeError> {
+    fn visit_expression_smt(&mut self, stmt: &ExpressionStmt) -> Result<(), RuntimeError> {
         self.evaluate(stmt.expression.to_owned())?;
 
         Ok(())
     }
 
-    fn visit_print_smt(&mut self, stmt: &crate::ast::PrintStmt) -> Result<(), RuntimeError> {
+    fn visit_print_smt(&mut self, stmt: &PrintStmt) -> Result<(), RuntimeError> {
         let value = self.evaluate(stmt.expression.to_owned())?;
 
-        if let Some(value) = value.downcast_ref::<f32>() {
-            println!("{}", value);
-
-            return Ok(());
-        }
-
-        if let Some(value) = value.downcast_ref::<String>() {
-            println!("{}", value);
-
-            return Ok(());
-        }
-
-        if let Some(value) = value.downcast_ref::<bool>() {
-            println!("{}", value);
-
-            return Ok(());
-        }
-
-        if let Some(_) = value.downcast_ref::<NilType>() {
-            println!("nil");
-
-            return Ok(());
-        }
+        match value {
+            LiteralType::Nil => println!("{}", "nil"),
+            LiteralType::Number(number_value) => println!("{}", number_value),
+            LiteralType::String(string_value) => println!("{}", string_value),
+            LiteralType::Bool(bool_value) => println!("{}", bool_value),
+        };
 
         Ok(())
     }
 
-    fn visit_var_decl_smt(&mut self, stmt: &crate::ast::VarDeclStmt) -> Result<(), RuntimeError> {
-        let mut value: Rc<dyn Any> = Rc::new(NilType::new());
+    fn visit_var_decl_smt(&mut self, stmt: &VarDeclStmt) -> Result<(), RuntimeError> {
+        let mut value: LiteralType = LiteralType::Nil;
 
         if let Some(initializer) = &stmt.initializer {
             value = self.evaluate(initializer.to_owned())?;
@@ -370,7 +337,7 @@ impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
         Ok(())
     }
 
-    fn visit_while_smt(&mut self, stmt: &crate::ast::WhileSmt) -> Result<(), RuntimeError> {
+    fn visit_while_smt(&mut self, stmt: &WhileSmt) -> Result<(), RuntimeError> {
         if let Some(condition) = &stmt.condition {
             let mut condition_value = self.evaluate(condition.to_owned())?;
 
@@ -384,11 +351,42 @@ impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
         Ok(())
     }
 
-    fn visit_block_smt(&mut self, stmt: &crate::ast::BlockStmt) -> Result<(), RuntimeError> {
+    fn visit_for_range_smt(&mut self, stmt: &ForRangeStmt) -> Result<(), RuntimeError> {
+        let start = self.evaluate(stmt.range_start.to_owned())?;
+        let end = self.evaluate(stmt.range_end.to_owned())?;
+
+        match (start, end) {
+            (LiteralType::Number(start_value), LiteralType::Number(end_value)) => {
+                self.environment_manager.add_env();
+
+                self.environment_manager.define(
+                    stmt.name.lexeme.to_owned(),
+                    LiteralType::Number(start_value),
+                );
+
+                for i in start_value as i32..(end_value + 1.0) as i32 {
+                    self.environment_manager
+                        .assign(stmt.name.to_owned(), LiteralType::Number(i as f32))?;
+
+                    self.execute(stmt.body.to_owned())?;
+                }
+
+                self.environment_manager.remove_env();
+
+                Ok(())
+            }
+            _ => Err(RuntimeError::new(
+                stmt.name.to_owned(),
+                "range must be a number".to_owned(),
+            )),
+        }
+    }
+
+    fn visit_block_smt(&mut self, stmt: &BlockStmt) -> Result<(), RuntimeError> {
         self.execute_block(stmt.statements.to_owned())
     }
 
-    fn visit_if_smt(&mut self, stmt: &crate::ast::IfStmt) -> Result<(), RuntimeError> {
+    fn visit_if_smt(&mut self, stmt: &IfStmt) -> Result<(), RuntimeError> {
         let if_condition = self.evaluate(stmt.condition.to_owned())?;
 
         if self.is_truthy(if_condition) {
@@ -398,33 +396,5 @@ impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
         }
 
         Ok(())
-    }
-
-    fn visit_for_range_smt(&mut self, stmt: &crate::ast::ForRangeStmt) -> Result<(), RuntimeError> {
-        let start = self.evaluate(stmt.range_start.to_owned())?;
-        let end = self.evaluate(stmt.range_end.to_owned())?;
-
-        if let (Some(start), Some(end)) = (start.downcast_ref::<f32>(), end.downcast_ref::<f32>()) {
-            self.environment_manager.add_env();
-
-            self.environment_manager
-                .define(stmt.name.lexeme.to_owned(), Rc::new(*start));
-
-            for i in (*start) as i32..(*end + 1.0) as i32 {
-                self.environment_manager
-                    .assign(stmt.name.to_owned(), Rc::new(i as f32))?;
-
-                self.execute(stmt.body.to_owned())?;
-            }
-
-            self.environment_manager.remove_env();
-
-            Ok(())
-        } else {
-            Err(RuntimeError::new(
-                stmt.name.to_owned(),
-                "range must be a number".to_owned(),
-            ))
-        }
     }
 }

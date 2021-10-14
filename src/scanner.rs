@@ -1,6 +1,9 @@
-use std::{any::Any, process, rc::Rc};
+use std::process;
 
-use crate::token::{Token, TokenType};
+use crate::{
+    token::{Token, TokenType},
+    types::LiteralType,
+};
 
 pub struct ScannerError {
     line: i32,
@@ -50,7 +53,7 @@ impl Scanner {
             }
         }
 
-        self.add_token(TokenType::EOF, None);
+        self.add_token(TokenType::EOF, LiteralType::Nil);
 
         self.tokens.to_owned()
     }
@@ -59,45 +62,45 @@ impl Scanner {
         let current_char = self.advance();
 
         match current_char {
-            '(' => self.add_token(TokenType::LeftParen, None),
-            ')' => self.add_token(TokenType::RightParen, None),
-            '{' => self.add_token(TokenType::LeftBrace, None),
-            '}' => self.add_token(TokenType::RightBrace, None),
-            ',' => self.add_token(TokenType::Comma, None),
+            '(' => self.add_token(TokenType::LeftParen, LiteralType::Nil),
+            ')' => self.add_token(TokenType::RightParen, LiteralType::Nil),
+            '{' => self.add_token(TokenType::LeftBrace, LiteralType::Nil),
+            '}' => self.add_token(TokenType::RightBrace, LiteralType::Nil),
+            ',' => self.add_token(TokenType::Comma, LiteralType::Nil),
             '.' => {
                 if self.match_char('.') {
-                    self.add_token(TokenType::DotDot, None);
+                    self.add_token(TokenType::DotDot, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Dot, None);
+                    self.add_token(TokenType::Dot, LiteralType::Nil);
                 }
             }
-            ';' => self.add_token(TokenType::Semicolon, None),
+            ';' => self.add_token(TokenType::Semicolon, LiteralType::Nil),
             '-' => {
                 if self.match_char('=') {
-                    self.add_token(TokenType::MinusEqual, None);
+                    self.add_token(TokenType::MinusEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Minus, None);
+                    self.add_token(TokenType::Minus, LiteralType::Nil);
                 }
             }
             '+' => {
                 if self.match_char('=') {
-                    self.add_token(TokenType::PlusEqual, None);
+                    self.add_token(TokenType::PlusEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Plus, None);
+                    self.add_token(TokenType::Plus, LiteralType::Nil);
                 }
             }
             '*' => {
                 if self.match_char('=') {
-                    self.add_token(TokenType::StarEqual, None);
+                    self.add_token(TokenType::StarEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Star, None);
+                    self.add_token(TokenType::Star, LiteralType::Nil);
                 }
             }
             '%' => {
                 if self.match_char('=') {
-                    self.add_token(TokenType::PercentEqual, None);
+                    self.add_token(TokenType::PercentEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Percent, None);
+                    self.add_token(TokenType::Percent, LiteralType::Nil);
                 }
             }
             '/' => {
@@ -106,37 +109,37 @@ impl Scanner {
                         self.advance();
                     }
                 } else if self.match_char('=') {
-                    self.add_token(TokenType::SlashEqual, None);
+                    self.add_token(TokenType::SlashEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Slash, None);
+                    self.add_token(TokenType::Slash, LiteralType::Nil);
                 }
             }
             '!' => {
                 if self.match_char('=') {
-                    self.add_token(TokenType::BangEqual, None);
+                    self.add_token(TokenType::BangEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Bang, None);
+                    self.add_token(TokenType::Bang, LiteralType::Nil);
                 }
             }
             '=' => {
                 if self.match_char('=') {
-                    self.add_token(TokenType::EqualEqual, None);
+                    self.add_token(TokenType::EqualEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Equal, None);
+                    self.add_token(TokenType::Equal, LiteralType::Nil);
                 }
             }
             '<' => {
                 if self.match_char('=') {
-                    self.add_token(TokenType::LessEqual, None);
+                    self.add_token(TokenType::LessEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Less, None);
+                    self.add_token(TokenType::Less, LiteralType::Nil);
                 }
             }
             '>' => {
                 if self.match_char('=') {
-                    self.add_token(TokenType::GreaterEqual, None);
+                    self.add_token(TokenType::GreaterEqual, LiteralType::Nil);
                 } else {
-                    self.add_token(TokenType::Greater, None);
+                    self.add_token(TokenType::Greater, LiteralType::Nil);
                 }
             }
             '"' => self.scan_string()?,
@@ -186,10 +189,11 @@ impl Scanner {
 
         self.advance(); // "
 
-        let literal = self.source[self.start + 1..self.current - 1]
+        let string = self.source[self.start + 1..self.current - 1]
             .to_owned()
             .replace("\\n", "\n");
-        self.add_token(TokenType::String, Some(Rc::new(literal)));
+
+        self.add_token(TokenType::String, LiteralType::String(string));
 
         Ok(())
     }
@@ -218,7 +222,7 @@ impl Scanner {
             }
         };
 
-        self.add_token(TokenType::Number, Some(Rc::new(float)));
+        self.add_token(TokenType::Number, LiteralType::Number(float));
 
         Ok(())
     }
@@ -231,10 +235,10 @@ impl Scanner {
         let text = self.source[self.start..self.current].to_owned();
         let token_type = self.match_keyword(&text);
 
-        self.add_token(token_type, None);
+        self.add_token(token_type, LiteralType::Nil);
     }
 
-    fn add_token(&mut self, t_type: TokenType, literal: Option<Rc<dyn Any>>) {
+    fn add_token(&mut self, t_type: TokenType, literal: LiteralType) {
         let text = self.source[self.start..self.current].to_owned();
 
         self.tokens

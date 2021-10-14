@@ -3,11 +3,11 @@ use std::{process, rc::Rc};
 use crate::{
     ast::{
         AssignExpr, BinaryExpr, BlockStmt, Expr, ExpressionStmt, ForRangeStmt, GroupExpr, IfStmt,
-        LiteralExpr, LogicalExpr, NilType, PrintStmt, Stmt, UnaryExpr, VarDeclStmt, VariableExpr,
-        WhileSmt,
+        LiteralExpr, LogicalExpr, PrintStmt, Stmt, UnaryExpr, VarDeclStmt, VariableExpr, WhileSmt,
     },
     error::WindError,
     token::{Token, TokenType},
+    types::LiteralType,
 };
 
 pub struct ParseError {
@@ -180,7 +180,7 @@ impl Parser {
         }
 
         if let None = condition {
-            condition = Some(LiteralExpr::new(Rc::new(true)));
+            condition = Some(LiteralExpr::new(LiteralType::Bool(true)));
         }
 
         body = WhileSmt::new(condition, body);
@@ -372,19 +372,19 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Rc<dyn Expr>, ParseError> {
         if self.match_token(&[TokenType::False]) {
-            return Ok(LiteralExpr::new(Rc::new(false)));
+            return Ok(LiteralExpr::new(LiteralType::Bool(false)));
         }
 
         if self.match_token(&[TokenType::True]) {
-            return Ok(LiteralExpr::new(Rc::new(true)));
+            return Ok(LiteralExpr::new(LiteralType::Bool(true)));
         }
 
         if self.match_token(&[TokenType::Nil]) {
-            return Ok(LiteralExpr::new(Rc::new(NilType {})));
+            return Ok(LiteralExpr::new(LiteralType::Nil));
         }
 
         if self.match_token(&[TokenType::Number, TokenType::String]) {
-            let value = self.previous().literal.unwrap().to_owned();
+            let value = self.previous().literal;
             return Ok(LiteralExpr::new(value));
         }
 

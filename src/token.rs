@@ -1,4 +1,4 @@
-use std::{any::Any, rc::Rc};
+use crate::types::LiteralType;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenType {
@@ -59,17 +59,12 @@ pub enum TokenType {
 pub struct Token {
     pub t_type: TokenType,
     pub lexeme: String,
-    pub literal: Option<Rc<dyn Any>>,
+    pub literal: LiteralType,
     pub line: i32,
 }
 
 impl Token {
-    pub fn new(
-        t_type: TokenType,
-        lexeme: String,
-        literal: Option<Rc<dyn Any>>,
-        line: i32,
-    ) -> Token {
+    pub fn new(t_type: TokenType, lexeme: String, literal: LiteralType, line: i32) -> Token {
         Token {
             t_type,
             lexeme,
