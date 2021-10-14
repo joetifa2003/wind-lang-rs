@@ -2,6 +2,7 @@ mod environment;
 
 use std::{
     any::{Any, TypeId},
+    process,
     rc::Rc,
 };
 
@@ -26,7 +27,11 @@ impl RuntimeError {
 
 impl WindError for RuntimeError {
     fn report(&self) {
-        eprintln!("{} {}", self.token.lexeme, self.message);
+        eprintln!(
+            "[line {}]: near '{}' {}",
+            self.token.line, self.token.lexeme, self.message
+        );
+        process::exit(1);
     }
 }
 
@@ -259,7 +264,8 @@ impl ExprVisitor<Result<Rc<dyn Any>, RuntimeError>> for Interpreter {
                     left.downcast_ref::<String>(),
                     right.downcast_ref::<String>(),
                 ) {
-                    return Ok(Rc::new(left_value.to_owned() + right_value));
+                    let res = [left_value.to_owned(), right_value.to_owned()].join("");
+                    return Ok(Rc::new(res));
                 }
 
                 Err(RuntimeError::new(
@@ -392,5 +398,33 @@ impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
         }
 
         Ok(())
+    }
+
+    fn visit_for_range_smt(&mut self, stmt: &crate::ast::ForRangeStmt) -> Result<(), RuntimeError> {
+        let start = self.evaluate(stmt.range_start.to_owned())?;
+        let end = self.evaluate(stmt.range_end.to_owned())?;
+
+        if let (Some(start), Some(end)) = (start.downcast_ref::<f32>(), end.downcast_ref::<f32>()) {
+            self.environment_manager.add_env();
+
+            self.environment_manager
+                .define(stmt.name.lexeme.to_owned(), Rc::new(*start));
+
+            for i in (*start) as i32..(*end + 1.0) as i32 {
+                self.environment_manager
+                    .assign(stmt.name.to_owned(), Rc::new(i as f32))?;
+
+                self.execute(stmt.body.to_owned())?;
+            }
+
+            self.environment_manager.remove_env();
+
+            Ok(())
+        } else {
+            Err(RuntimeError::new(
+                stmt.name.to_owned(),
+                "range must be a number".to_owned(),
+            ))
+        }
     }
 }

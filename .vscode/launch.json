@@ -7,15 +7,11 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug executable 'tifa-lang'",
+      "name": "Debug executable 'wind-lang'",
       "cargo": {
-        "args": [
-          "build",
-          "--bin=tifa-lang",
-          "--package=tifa-lang"
-        ],
+        "args": ["build", "--bin=wind-lang", "--package=wind-lang"],
         "filter": {
-          "name": "tifa-lang",
+          "name": "wind-lang",
           "kind": "bin"
         }
       },
@@ -25,16 +21,11 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug unit tests in executable 'tifa-lang'",
+      "name": "Debug unit tests in executable 'wind-lang'",
       "cargo": {
-        "args": [
-          "test",
-          "--no-run",
-          "--bin=tifa-lang",
-          "--package=tifa-lang"
-        ],
+        "args": ["test", "--no-run", "--bin=wind-lang", "--package=wind-lang"],
         "filter": {
-          "name": "tifa-lang",
+          "name": "wind-lang",
           "kind": "bin"
         }
       },

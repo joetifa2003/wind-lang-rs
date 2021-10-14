@@ -1,8 +1,7 @@
-use std::{any::Any, collections::HashMap, rc::Rc};
-
-use crate::token::Token;
-
 use super::RuntimeError;
+use crate::token::Token;
+use hashbrown::HashMap;
+use std::{any::Any, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub struct EnvironmentManger {

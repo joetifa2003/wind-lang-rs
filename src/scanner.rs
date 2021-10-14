@@ -13,7 +13,7 @@ impl ScannerError {
     }
 
     fn report(&self) {
-        eprintln!("[line {}] Error: {}", self.line, self.message);
+        eprintln!("[line {}]: {}", self.line, self.message);
         process::exit(65);
     }
 }
@@ -34,7 +34,7 @@ impl Scanner {
             tokens: Vec::new(),
             start: 0,
             current: 0,
-            line: 0,
+            line: 1,
         }
     }
 
@@ -64,7 +64,13 @@ impl Scanner {
             '{' => self.add_token(TokenType::LeftBrace, None),
             '}' => self.add_token(TokenType::RightBrace, None),
             ',' => self.add_token(TokenType::Comma, None),
-            '.' => self.add_token(TokenType::Dot, None),
+            '.' => {
+                if self.match_char('.') {
+                    self.add_token(TokenType::DotDot, None);
+                } else {
+                    self.add_token(TokenType::Dot, None);
+                }
+            }
             ';' => self.add_token(TokenType::Semicolon, None),
             '-' => {
                 if self.match_char('=') {
@@ -275,6 +281,7 @@ impl Scanner {
             "super" => TokenType::Super,
             "this" => TokenType::This,
             "var" => TokenType::Var,
+            "in" => TokenType::In,
             _ => TokenType::Identifier,
         }
     }

@@ -28,6 +28,7 @@ pub trait StmtVisitor<T> {
     fn visit_print_smt(&mut self, stmt: &PrintStmt) -> T;
     fn visit_var_decl_smt(&mut self, stmt: &VarDeclStmt) -> T;
     fn visit_while_smt(&mut self, stmt: &WhileSmt) -> T;
+    fn visit_for_range_smt(&mut self, stmt: &ForRangeStmt) -> T;
     fn visit_block_smt(&mut self, stmt: &BlockStmt) -> T;
     fn visit_if_smt(&mut self, stmt: &IfStmt) -> T;
 }
@@ -284,6 +285,35 @@ impl WhileSmt {
 impl Stmt for WhileSmt {
     fn accept_interpreter(&self, interpreter: &mut Interpreter) -> Result<(), RuntimeError> {
         interpreter.visit_while_smt(self)
+    }
+}
+
+pub struct ForRangeStmt {
+    pub name: Token,
+    pub range_start: Rc<dyn Expr>,
+    pub range_end: Rc<dyn Expr>,
+    pub body: Rc<dyn Stmt>,
+}
+
+impl ForRangeStmt {
+    pub fn new(
+        name: Token,
+        range_start: Rc<dyn Expr>,
+        range_end: Rc<dyn Expr>,
+        body: Rc<dyn Stmt>,
+    ) -> Rc<ForRangeStmt> {
+        Rc::new(ForRangeStmt {
+            name,
+            range_start,
+            range_end,
+            body,
+        })
+    }
+}
+
+impl Stmt for ForRangeStmt {
+    fn accept_interpreter(&self, interpreter: &mut Interpreter) -> Result<(), RuntimeError> {
+        interpreter.visit_for_range_smt(&self)
     }
 }
 

@@ -2,8 +2,9 @@ use std::{process, rc::Rc};
 
 use crate::{
     ast::{
-        AssignExpr, BinaryExpr, BlockStmt, Expr, ExpressionStmt, GroupExpr, IfStmt, LiteralExpr,
-        LogicalExpr, NilType, PrintStmt, Stmt, UnaryExpr, VarDeclStmt, VariableExpr, WhileSmt,
+        AssignExpr, BinaryExpr, BlockStmt, Expr, ExpressionStmt, ForRangeStmt, GroupExpr, IfStmt,
+        LiteralExpr, LogicalExpr, NilType, PrintStmt, Stmt, UnaryExpr, VarDeclStmt, VariableExpr,
+        WhileSmt,
     },
     error::WindError,
     token::{Token, TokenType},
@@ -22,7 +23,7 @@ impl ParseError {
 
 impl WindError for ParseError {
     fn report(&self) {
-        eprintln!("[line {}]{}", self.token.line, self.message);
+        eprintln!("[line {}]: {}", self.token.line, self.message);
         process::exit(1);
     }
 }
@@ -105,9 +106,9 @@ impl Parser {
     }
 
     fn if_statement(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
-        self.consume(TokenType::LeftParen, "expect '(' after 'if'")?;
+        // self.consume(TokenType::LeftParen, "expect '(' after 'if'")?;
         let condition = self.expression()?;
-        self.consume(TokenType::RightParen, "expect ')' after 'if'")?;
+        // self.consume(TokenType::RightParen, "expect ')' after 'if'")?;
 
         let then_branch = self.statement()?;
         let mut else_branch: Option<Rc<dyn Stmt>> = None;
@@ -127,14 +128,32 @@ impl Parser {
     }
 
     fn for_statement(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
-        self.consume(TokenType::LeftParen, "expect '(' after 'for'")?;
+        if self.check(TokenType::Identifier) {
+            return self.range_for_loop();
+        } else {
+            return self.manual_for_loop();
+        }
+    }
+
+    fn range_for_loop(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
+        let name = self.advance();
+        self.consume(TokenType::In, "expected 'in' after name")?;
+        let range_start = self.expression()?;
+        self.consume(TokenType::DotDot, "expected '..' after expression")?;
+        let range_end = self.expression()?;
+
+        let body = self.statement()?;
+
+        Ok(ForRangeStmt::new(name, range_start, range_end, body))
+    }
+
+    fn manual_for_loop(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
+        // self.consume(TokenType::LeftParen, "expect '(' after 'for'")?;
 
         let initializer: Option<Rc<dyn Stmt>>;
-        if self.check(TokenType::Semicolon) {
+        if self.match_token(&[TokenType::Semicolon]) {
             initializer = None;
-        } else if self.check(TokenType::Var) {
-            self.advance(); // var
-
+        } else if self.match_token(&[TokenType::Var]) {
             initializer = Some(self.var_declaration()?);
         } else {
             initializer = Some(self.expression_statement()?);
@@ -152,7 +171,7 @@ impl Parser {
             increment = Some(self.expression()?)
         }
 
-        self.consume(TokenType::RightParen, "expect ')' after 'for'")?;
+        // self.consume(TokenType::RightParen, "expect ')' after 'for'")?;
 
         let mut body = self.statement()?;
 
@@ -174,9 +193,9 @@ impl Parser {
     }
 
     fn while_statement(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
-        self.consume(TokenType::LeftParen, "expect '(' after 'while'")?;
+        // self.consume(TokenType::LeftParen, "expect '(' after 'while'")?;
         let condition = self.expression()?;
-        self.consume(TokenType::RightParen, "expect ')' after 'while'")?;
+        // self.consume(TokenType::RightParen, "expect ')' after 'while'")?;
 
         let body = self.statement()?;
 
