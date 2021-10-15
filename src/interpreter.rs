@@ -4,9 +4,9 @@ use std::{process, rc::Rc};
 
 use crate::{
     ast::{
-        AssignExpr, BinaryExpr, BlockStmt, Expr, ExprVisitor, ExpressionStmt, ForRangeStmt,
-        GroupExpr, IfStmt, LiteralExpr, LogicalExpr, PrintStmt, Stmt, StmtVisitor, UnaryExpr,
-        VarDeclStmt, VariableExpr, WhileSmt,
+        AssignExpr, BinaryExpr, BlockStmt, CallExpr, Expr, ExprVisitor, ExpressionStmt,
+        ForRangeStmt, FunctionDeclStmt, GroupExpr, IfStmt, LiteralExpr, LogicalExpr, PrintStmt,
+        Stmt, StmtVisitor, UnaryExpr, VarDeclStmt, VariableExpr, WhileSmt,
     },
     error::WindError,
     token::{Token, TokenType},
@@ -37,7 +37,7 @@ impl WindError for RuntimeError {
 }
 
 pub struct Interpreter {
-    environment_manager: EnvironmentManger,
+    pub environment_manager: EnvironmentManger,
 }
 
 impl Interpreter {
@@ -62,7 +62,7 @@ impl Interpreter {
         stmt.accept_interpreter(self)
     }
 
-    fn execute_block(&mut self, statements: Vec<Rc<dyn Stmt>>) -> Result<(), RuntimeError> {
+    pub fn execute_block(&mut self, statements: Vec<Rc<dyn Stmt>>) -> Result<(), RuntimeError> {
         self.environment_manager.add_env();
 
         for statement in statements {
@@ -302,6 +302,26 @@ impl ExprVisitor<Result<LiteralType, RuntimeError>> for Interpreter {
 
         Ok(self.evaluate(expr.right.to_owned())?)
     }
+
+    fn visit_call_expr(&mut self, expr: &CallExpr) -> Result<LiteralType, RuntimeError> {
+        let callee = self.evaluate(expr.callee.to_owned())?;
+        let mut args: Vec<LiteralType> = Vec::new();
+
+        for argument in expr.arguments.to_owned() {
+            args.push(self.evaluate(argument)?);
+        }
+
+        let arity = callee.arity(&expr.paren)?;
+
+        if args.len() == arity {
+            callee.call(self, &expr.paren, args)
+        } else {
+            Err(RuntimeError::new(
+                expr.paren.to_owned(),
+                format!("expected {} arguments but got {}", arity, args.len()),
+            ))
+        }
+    }
 }
 
 impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
@@ -319,6 +339,7 @@ impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
             LiteralType::Number(number_value) => println!("{}", number_value),
             LiteralType::String(string_value) => println!("{}", string_value),
             LiteralType::Bool(bool_value) => println!("{}", bool_value),
+            LiteralType::Function(declaration) => println!("<fn {}>", declaration.name.lexeme),
         };
 
         Ok(())
@@ -394,6 +415,23 @@ impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
         } else if let Some(else_branch) = &stmt.else_branch {
             self.execute(else_branch.to_owned())?;
         }
+
+        Ok(())
+    }
+
+    fn visit_function_decl_stmt(
+        &mut self,
+        stmt: &crate::ast::FunctionDeclStmt,
+    ) -> Result<(), RuntimeError> {
+        let decl = FunctionDeclStmt::new(
+            stmt.name.to_owned(),
+            stmt.params.to_owned(),
+            stmt.body.to_owned(),
+        );
+
+        let function = LiteralType::Function(decl);
+        self.environment_manager
+            .define(stmt.name.lexeme.to_owned(), function);
 
         Ok(())
     }

@@ -2,8 +2,9 @@ use std::{process, rc::Rc};
 
 use crate::{
     ast::{
-        AssignExpr, BinaryExpr, BlockStmt, Expr, ExpressionStmt, ForRangeStmt, GroupExpr, IfStmt,
-        LiteralExpr, LogicalExpr, PrintStmt, Stmt, UnaryExpr, VarDeclStmt, VariableExpr, WhileSmt,
+        AssignExpr, BinaryExpr, BlockStmt, CallExpr, Expr, ExpressionStmt, ForRangeStmt,
+        FunctionDeclStmt, GroupExpr, IfStmt, LiteralExpr, LogicalExpr, PrintStmt, Stmt, UnaryExpr,
+        VarDeclStmt, VariableExpr, WhileSmt,
     },
     error::WindError,
     token::{Token, TokenType},
@@ -56,13 +57,49 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
+        if self.match_token(&[TokenType::Fun]) {
+            return Ok(self.function_declaration("function")?);
+        }
+
         if self.match_token(&[TokenType::Var]) {
-            let var_decl = self.var_declaration()?;
-            return Ok(var_decl);
+            return Ok(self.var_declaration()?);
         }
 
         let statement = self.statement()?;
         Ok(statement)
+    }
+
+    fn function_declaration(&mut self, kind: &'static str) -> Result<Rc<dyn Stmt>, ParseError> {
+        let name = self.consume(
+            TokenType::Identifier,
+            format!("expect {} name", kind).as_str(),
+        )?;
+
+        self.consume(
+            TokenType::LeftParen,
+            format!("expect '(' after {} name", kind).as_str(),
+        )?;
+
+        let mut params: Vec<Token> = Vec::new();
+        if !self.check(TokenType::RightParen) {
+            params.push(self.consume(TokenType::Identifier, "expect parameter name.")?);
+            while self.match_token(&[TokenType::Comma]) {
+                params.push(self.consume(TokenType::Identifier, "expect parameter name.")?);
+            }
+        }
+
+        self.consume(
+            TokenType::RightParen,
+            format!("expect ')' after {} parameters", kind).as_str(),
+        )?;
+
+        self.consume(
+            TokenType::LeftBrace,
+            format!("expect '{{' before {} body", kind).as_str(),
+        )?;
+        let body = self.block()?;
+
+        Ok(FunctionDeclStmt::new(name, params, body))
     }
 
     fn var_declaration(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
@@ -99,7 +136,7 @@ impl Parser {
         }
 
         if self.match_token(&[TokenType::LeftBrace]) {
-            return Ok(self.block_statement()?);
+            return Ok(BlockStmt::new(self.block()?));
         }
 
         Ok(self.expression_statement()?)
@@ -202,7 +239,7 @@ impl Parser {
         Ok(WhileSmt::new(Some(condition), body))
     }
 
-    fn block_statement(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
+    fn block(&mut self) -> Result<Vec<Rc<dyn Stmt>>, ParseError> {
         let mut statements: Vec<Rc<dyn Stmt>> = Vec::new();
 
         while !self.check(TokenType::RightBrace) && !self.is_at_end() {
@@ -213,7 +250,7 @@ impl Parser {
 
         self.consume(TokenType::RightBrace, "expect '}' after block")?;
 
-        Ok(BlockStmt::new(statements))
+        Ok(statements)
     }
 
     fn expression_statement(&mut self) -> Result<Rc<dyn Stmt>, ParseError> {
@@ -367,7 +404,36 @@ impl Parser {
             return Ok(UnaryExpr::new(operator.to_owned(), right));
         }
 
-        Ok(self.primary()?)
+        Ok(self.call()?)
+    }
+
+    fn call(&mut self) -> Result<Rc<dyn Expr>, ParseError> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.match_token(&[TokenType::LeftParen]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Rc<dyn Expr>) -> Result<Rc<dyn Expr>, ParseError> {
+        let mut args: Vec<Rc<dyn Expr>> = Vec::new();
+
+        if !self.check(TokenType::RightParen) {
+            args.push(self.expression()?);
+            while self.match_token(&[TokenType::Comma]) {
+                args.push(self.expression()?);
+            }
+        }
+
+        let paren = self.consume(TokenType::RightParen, "expect ')' after arguments")?;
+
+        Ok(CallExpr::new(callee, paren, args))
     }
 
     fn primary(&mut self) -> Result<Rc<dyn Expr>, ParseError> {

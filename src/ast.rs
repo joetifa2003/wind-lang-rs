@@ -14,11 +14,13 @@ pub trait ExprVisitor<T> {
     fn visit_variable_expr(&mut self, expr: &VariableExpr) -> T;
     fn visit_assign_expr(&mut self, expr: &AssignExpr) -> T;
     fn visit_logical_expr(&mut self, expr: &LogicalExpr) -> T;
+    fn visit_call_expr(&mut self, expr: &CallExpr) -> T;
 }
 
 pub trait StmtVisitor<T> {
     fn visit_expression_smt(&mut self, stmt: &ExpressionStmt) -> T;
     fn visit_print_smt(&mut self, stmt: &PrintStmt) -> T;
+    fn visit_function_decl_stmt(&mut self, stmt: &FunctionDeclStmt) -> T;
     fn visit_var_decl_smt(&mut self, stmt: &VarDeclStmt) -> T;
     fn visit_while_smt(&mut self, stmt: &WhileSmt) -> T;
     fn visit_for_range_smt(&mut self, stmt: &ForRangeStmt) -> T;
@@ -131,6 +133,35 @@ impl Expr for UnaryExpr {
         interpreter: &mut Interpreter,
     ) -> Result<LiteralType, RuntimeError> {
         interpreter.visit_unary_expr(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+pub struct CallExpr {
+    pub callee: Rc<dyn Expr>,
+    pub paren: Token,
+    pub arguments: Vec<Rc<dyn Expr>>,
+}
+
+impl CallExpr {
+    pub fn new(callee: Rc<dyn Expr>, paren: Token, arguments: Vec<Rc<dyn Expr>>) -> Rc<dyn Expr> {
+        Rc::new(CallExpr {
+            callee,
+            paren,
+            arguments,
+        })
+    }
+}
+
+impl Expr for CallExpr {
+    fn accept_interpreter(
+        &self,
+        interpreter: &mut Interpreter,
+    ) -> Result<LiteralType, RuntimeError> {
+        interpreter.visit_call_expr(self)
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -349,5 +380,23 @@ impl IfStmt {
 impl Stmt for IfStmt {
     fn accept_interpreter(&self, interpreter: &mut Interpreter) -> Result<(), RuntimeError> {
         interpreter.visit_if_smt(self)
+    }
+}
+
+pub struct FunctionDeclStmt {
+    pub name: Token,
+    pub params: Vec<Token>,
+    pub body: Vec<Rc<dyn Stmt>>,
+}
+
+impl FunctionDeclStmt {
+    pub fn new(name: Token, params: Vec<Token>, body: Vec<Rc<dyn Stmt>>) -> Rc<FunctionDeclStmt> {
+        Rc::new(FunctionDeclStmt { name, params, body })
+    }
+}
+
+impl Stmt for FunctionDeclStmt {
+    fn accept_interpreter(&self, interpreter: &mut Interpreter) -> Result<(), RuntimeError> {
+        interpreter.visit_function_decl_stmt(self)
     }
 }

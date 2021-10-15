@@ -55,7 +55,7 @@ pub enum TokenType {
     EOF,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Token {
     pub t_type: TokenType,
     pub lexeme: String,

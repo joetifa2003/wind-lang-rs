@@ -2,13 +2,13 @@ use super::RuntimeError;
 use crate::{token::Token, types::LiteralType};
 use hashbrown::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EnvironmentManger {
     index: usize,
     environments: Vec<Environment>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Environment {
     values: HashMap<String, LiteralType>,
 }
@@ -23,9 +23,11 @@ impl Environment {
 
 impl EnvironmentManger {
     pub fn new() -> EnvironmentManger {
+        let global_env = Environment::new();
+
         EnvironmentManger {
             index: 0,
-            environments: vec![Environment::new()],
+            environments: vec![global_env],
         }
     }
 
