@@ -2,13 +2,13 @@ use super::RuntimeError;
 use crate::{token::Token, types::LiteralType};
 use hashbrown::HashMap;
 
-#[derive(Clone)]
+#[derive()]
 pub struct EnvironmentManger {
     index: usize,
     environments: Vec<Environment>,
 }
 
-#[derive(Clone)]
+#[derive()]
 pub struct Environment {
     values: HashMap<String, LiteralType>,
 }
@@ -39,7 +39,7 @@ impl EnvironmentManger {
         let environment = &mut self.environments[self.index];
 
         if environment.values.contains_key(&name.lexeme) {
-            environment.values.insert(name.lexeme, value.to_owned());
+            environment.values.insert(name.lexeme, value);
 
             return Ok(());
         }

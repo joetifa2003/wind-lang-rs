@@ -1,7 +1,5 @@
-use std::rc::Rc;
-
 use crate::{
-    ast::FunctionDeclStmt,
+    ast::Stmt,
     interpreter::{Interpreter, RuntimeError},
     token::Token,
 };
@@ -12,7 +10,7 @@ pub enum LiteralType {
     Number(f32),
     String(String),
     Bool(bool),
-    Function(Rc<FunctionDeclStmt>),
+    Function { deceleration: Stmt },
 }
 
 impl LiteralType {
@@ -23,16 +21,17 @@ impl LiteralType {
         args: Vec<LiteralType>,
     ) -> Result<LiteralType, RuntimeError> {
         match self {
-            LiteralType::Function(deceleration) => {
+            LiteralType::Function { deceleration } => {
+                let (_, params, body) = deceleration.as_function_decl().unwrap();
                 interpreter.environment_manager.add_env();
 
-                for i in 0..deceleration.params.len() {
+                for i in 0..params.len() {
                     interpreter
                         .environment_manager
-                        .define(deceleration.params[i].lexeme.to_owned(), args[i].to_owned());
+                        .define(params[i].lexeme.to_owned(), args[i].to_owned());
                 }
 
-                interpreter.execute_block(deceleration.body.to_owned())?;
+                interpreter.execute_block(&body)?;
 
                 interpreter.environment_manager.remove_env();
 
@@ -47,7 +46,11 @@ impl LiteralType {
 
     pub fn arity(&self, paren: &Token) -> Result<usize, RuntimeError> {
         match self {
-            LiteralType::Function(decl) => Ok(decl.params.len()),
+            LiteralType::Function { deceleration } => {
+                let (_, params, _) = deceleration.as_function_decl().unwrap();
+
+                Ok(params.len())
+            }
             _ => Err(RuntimeError::new(
                 paren.to_owned(),
                 "can only call functions and classes".to_owned(),

@@ -1,13 +1,9 @@
 mod environment;
 
-use std::{process, rc::Rc};
+use std::process;
 
 use crate::{
-    ast::{
-        AssignExpr, BinaryExpr, BlockStmt, CallExpr, Expr, ExprVisitor, ExpressionStmt,
-        ForRangeStmt, FunctionDeclStmt, GroupExpr, IfStmt, LiteralExpr, LogicalExpr, PrintStmt,
-        Stmt, StmtVisitor, UnaryExpr, VarDeclStmt, VariableExpr, WhileSmt,
-    },
+    ast::{Expr, Stmt},
     error::WindError,
     token::{Token, TokenType},
     types::LiteralType,
@@ -47,8 +43,8 @@ impl Interpreter {
         }
     }
 
-    pub fn interpret(&mut self, statements: Vec<Rc<dyn Stmt>>) {
-        for statement in statements {
+    pub fn interpret(&mut self, statements: Vec<Stmt>) {
+        for statement in &statements {
             match self.execute(statement) {
                 Err(e) => {
                     e.report();
@@ -58,11 +54,121 @@ impl Interpreter {
         }
     }
 
-    fn execute(&mut self, stmt: Rc<dyn Stmt>) -> Result<(), RuntimeError> {
-        stmt.accept_interpreter(self)
+    fn execute(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
+        match stmt {
+            Stmt::Expression(expr) => {
+                self.evaluate(&*expr)?;
+
+                Ok(())
+            }
+            Stmt::Print(expr) => {
+                let value = self.evaluate(&*expr)?;
+
+                match value {
+                    LiteralType::Nil => println!("{}", "nil"),
+                    LiteralType::Number(number_value) => println!("{}", number_value),
+                    LiteralType::String(string_value) => println!("{}", string_value),
+                    LiteralType::Bool(bool_value) => println!("{}", bool_value),
+                    LiteralType::Function { deceleration } => {
+                        let (name, _, _) = deceleration.as_function_decl().unwrap();
+                        println!("<fn {}>", name.lexeme)
+                    }
+                };
+
+                Ok(())
+            }
+            Stmt::Block(statements) => self.execute_block(statements),
+            Stmt::VarDecl { name, initializer } => {
+                let mut value: LiteralType = LiteralType::Nil;
+
+                if let Some(initializer) = initializer {
+                    value = self.evaluate(&*initializer)?;
+                }
+
+                self.environment_manager
+                    .define(name.lexeme.to_owned(), value);
+
+                Ok(())
+            }
+            Stmt::While { condition, body } => {
+                if let Some(condition) = condition {
+                    let mut condition_value = self.evaluate(&*condition)?;
+
+                    while self.is_truthy(&condition_value) {
+                        self.execute(&(*body))?;
+
+                        condition_value = self.evaluate(&*condition)?;
+                    }
+                }
+
+                Ok(())
+            }
+            Stmt::ForRange {
+                name,
+                range_start,
+                range_end,
+                body,
+            } => {
+                let start = self.evaluate(&*range_start)?;
+                let end = self.evaluate(&*range_end)?;
+
+                match (start, end) {
+                    (LiteralType::Number(start_value), LiteralType::Number(end_value)) => {
+                        self.environment_manager.add_env();
+
+                        self.environment_manager
+                            .define(name.lexeme.to_owned(), LiteralType::Number(start_value));
+
+                        for i in start_value as i32..(end_value + 1.0) as i32 {
+                            self.environment_manager
+                                .assign(name.to_owned(), LiteralType::Number(i as f32))?;
+
+                            self.execute(&(*body))?;
+                        }
+
+                        self.environment_manager.remove_env();
+
+                        Ok(())
+                    }
+                    _ => Err(RuntimeError::new(
+                        name.to_owned(),
+                        "range must be a number".to_owned(),
+                    )),
+                }
+            }
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let if_condition = self.evaluate(&*condition)?;
+
+                if self.is_truthy(&if_condition) {
+                    self.execute(&(*then_branch))?;
+                } else if let Some(else_branch) = else_branch {
+                    self.execute(&(*else_branch))?;
+                }
+
+                Ok(())
+            }
+            Stmt::FunctionDecl {
+                name,
+                params: _,
+                body: _,
+            } => {
+                let function = LiteralType::Function {
+                    deceleration: stmt.to_owned(),
+                };
+
+                self.environment_manager
+                    .define(name.lexeme.to_owned(), function);
+
+                Ok(())
+            }
+        }
     }
 
-    pub fn execute_block(&mut self, statements: Vec<Rc<dyn Stmt>>) -> Result<(), RuntimeError> {
+    pub fn execute_block(&mut self, statements: &Vec<Stmt>) -> Result<(), RuntimeError> {
         self.environment_manager.add_env();
 
         for statement in statements {
@@ -74,12 +180,192 @@ impl Interpreter {
         Ok(())
     }
 
-    fn evaluate(&mut self, expr: Rc<dyn Expr>) -> Result<LiteralType, RuntimeError> {
-        expr.accept_interpreter(self)
+    fn evaluate(&mut self, expr: &Expr) -> Result<LiteralType, RuntimeError> {
+        match expr {
+            Expr::Group(expr) => self.evaluate(&**expr),
+            Expr::Literal(value) => Ok(value.to_owned()),
+            Expr::Variable(name) => Ok(self.environment_manager.get(&name)?),
+            Expr::Binary {
+                left,
+                operator,
+                right,
+            } => {
+                let left = self.evaluate(&*left)?;
+                let right = self.evaluate(&*right)?;
+
+                match operator.t_type {
+                    TokenType::Minus | TokenType::MinusEqual => {
+                        self.check_number_operands(&operator, &left, &right)?;
+
+                        match (left, right) {
+                            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                                Ok(LiteralType::Number(left_value - right_value))
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    TokenType::Slash | TokenType::SlashEqual => {
+                        self.check_number_operands(&operator, &left, &right)?;
+
+                        match (left, right) {
+                            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                                Ok(LiteralType::Number(left_value / right_value))
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    TokenType::Star | TokenType::StarEqual => {
+                        self.check_number_operands(&operator, &left, &right)?;
+
+                        match (left, right) {
+                            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                                Ok(LiteralType::Number(left_value * right_value))
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    TokenType::Percent | TokenType::PercentEqual => {
+                        self.check_number_operands(&operator, &left, &right)?;
+
+                        match (left, right) {
+                            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                                Ok(LiteralType::Number(left_value % right_value))
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    TokenType::Greater => {
+                        self.check_number_operands(&operator, &left, &right)?;
+
+                        match (left, right) {
+                            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                                Ok(LiteralType::Bool(left_value > right_value))
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    TokenType::GreaterEqual => {
+                        self.check_number_operands(&operator, &left, &right)?;
+
+                        match (left, right) {
+                            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                                Ok(LiteralType::Bool(left_value >= right_value))
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    TokenType::Less => {
+                        self.check_number_operands(&operator, &left, &right)?;
+                        match (left, right) {
+                            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                                Ok(LiteralType::Bool(left_value < right_value))
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    TokenType::LessEqual => {
+                        self.check_number_operands(&operator, &left, &right)?;
+
+                        match (left, right) {
+                            (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                                Ok(LiteralType::Bool(left_value <= right_value))
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    TokenType::EqualEqual => {
+                        Ok(LiteralType::Bool(self.is_equal(&operator, left, right)?))
+                    }
+                    TokenType::BangEqual => {
+                        Ok(LiteralType::Bool(!self.is_equal(&operator, left, right)?))
+                    }
+                    TokenType::Plus | TokenType::PlusEqual => match (left, right) {
+                        (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
+                            Ok(LiteralType::Number(left_value + right_value))
+                        }
+                        (LiteralType::String(left_value), LiteralType::String(right_value)) => {
+                            let res = [left_value.to_owned(), right_value.to_owned()].join("");
+                            Ok(LiteralType::String(res))
+                        }
+                        _ => Err(RuntimeError::new(
+                            operator.to_owned(),
+                            "cannot add".to_owned(),
+                        )),
+                    },
+
+                    _ => unreachable!(),
+                }
+            }
+            Expr::Unary { operator, right } => {
+                let right = self.evaluate(&*right)?;
+
+                match operator.t_type {
+                    TokenType::Bang => Ok(LiteralType::Bool(self.is_truthy(&right))),
+                    TokenType::Minus => {
+                        self.check_number_operand(&operator, &right)?;
+                        match right {
+                            LiteralType::Number(value) => Ok(LiteralType::Number(-value)),
+                            _ => unreachable!(),
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Expr::Call {
+                callee,
+                paren,
+                args: arguments,
+            } => {
+                let callee = self.evaluate(&**callee)?;
+                let mut args: Vec<LiteralType> = Vec::new();
+
+                for argument in arguments {
+                    args.push(self.evaluate(argument)?);
+                }
+
+                let arity = callee.arity(&paren)?;
+
+                if args.len() == arity {
+                    callee.call(self, &paren, args)
+                } else {
+                    Err(RuntimeError::new(
+                        paren.to_owned(),
+                        format!("expected {} arguments but got {}", arity, args.len()),
+                    ))
+                }
+            }
+            Expr::Assign { name, value } => {
+                let value = self.evaluate(&*value)?;
+
+                self.environment_manager
+                    .assign(name.to_owned(), value.to_owned())?;
+
+                Ok(value.to_owned())
+            }
+            Expr::Logical {
+                left,
+                operator,
+                right,
+            } => {
+                let left = self.evaluate(&*left)?;
+
+                if operator.t_type == TokenType::Or {
+                    if self.is_truthy(&left) {
+                        return Ok(left);
+                    }
+                } else {
+                    if !self.is_truthy(&left) {
+                        return Ok(left);
+                    }
+                }
+
+                Ok(self.evaluate(&*right)?)
+            }
+        }
     }
 
-    fn is_truthy(&self, object: LiteralType) -> bool {
-        match object {
+    fn is_truthy(&self, object: &LiteralType) -> bool {
+        match *object {
             LiteralType::Bool(value) => value,
             _ => false,
         }
@@ -132,307 +418,5 @@ impl Interpreter {
                 "cannot compare".to_owned(),
             )),
         }
-    }
-}
-
-impl ExprVisitor<Result<LiteralType, RuntimeError>> for Interpreter {
-    fn visit_literal_expr(&mut self, expr: &LiteralExpr) -> Result<LiteralType, RuntimeError> {
-        Ok(expr.value.to_owned())
-    }
-
-    fn visit_group_expr(&mut self, expr: &GroupExpr) -> Result<LiteralType, RuntimeError> {
-        let value = self.evaluate(expr.expression.to_owned())?;
-
-        Ok(value)
-    }
-
-    fn visit_unary_expr(&mut self, expr: &UnaryExpr) -> Result<LiteralType, RuntimeError> {
-        let right = self.evaluate(expr.right.to_owned())?;
-
-        match expr.operator.t_type {
-            TokenType::Bang => Ok(LiteralType::Bool(self.is_truthy(right))),
-            TokenType::Minus => {
-                self.check_number_operand(&expr.operator, &right)?;
-                match right {
-                    LiteralType::Number(value) => Ok(LiteralType::Number(-value)),
-                    _ => unreachable!(),
-                }
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn visit_binary_expr(&mut self, expr: &BinaryExpr) -> Result<LiteralType, RuntimeError> {
-        let left = self.evaluate(expr.left.to_owned())?;
-        let right = self.evaluate(expr.right.to_owned())?;
-
-        match expr.operator.t_type {
-            TokenType::Minus | TokenType::MinusEqual => {
-                self.check_number_operands(&expr.operator, &left, &right)?;
-
-                match (left, right) {
-                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                        Ok(LiteralType::Number(left_value - right_value))
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            TokenType::Slash | TokenType::SlashEqual => {
-                self.check_number_operands(&expr.operator, &left, &right)?;
-
-                match (left, right) {
-                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                        Ok(LiteralType::Number(left_value / right_value))
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            TokenType::Star | TokenType::StarEqual => {
-                self.check_number_operands(&expr.operator, &left, &right)?;
-
-                match (left, right) {
-                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                        Ok(LiteralType::Number(left_value * right_value))
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            TokenType::Percent | TokenType::PercentEqual => {
-                self.check_number_operands(&expr.operator, &left, &right)?;
-
-                match (left, right) {
-                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                        Ok(LiteralType::Number(left_value % right_value))
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            TokenType::Greater => {
-                self.check_number_operands(&expr.operator, &left, &right)?;
-
-                match (left, right) {
-                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                        Ok(LiteralType::Bool(left_value > right_value))
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            TokenType::GreaterEqual => {
-                self.check_number_operands(&expr.operator, &left, &right)?;
-
-                match (left, right) {
-                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                        Ok(LiteralType::Bool(left_value >= right_value))
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            TokenType::Less => {
-                self.check_number_operands(&expr.operator, &left, &right)?;
-                match (left, right) {
-                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                        Ok(LiteralType::Bool(left_value < right_value))
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            TokenType::LessEqual => {
-                self.check_number_operands(&expr.operator, &left, &right)?;
-
-                match (left, right) {
-                    (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                        Ok(LiteralType::Bool(left_value <= right_value))
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            TokenType::EqualEqual => Ok(LiteralType::Bool(self.is_equal(
-                &expr.operator,
-                left,
-                right,
-            )?)),
-            TokenType::BangEqual => Ok(LiteralType::Bool(!self.is_equal(
-                &expr.operator,
-                left,
-                right,
-            )?)),
-            TokenType::Plus | TokenType::PlusEqual => match (left, right) {
-                (LiteralType::Number(left_value), LiteralType::Number(right_value)) => {
-                    Ok(LiteralType::Number(left_value + right_value))
-                }
-                (LiteralType::String(left_value), LiteralType::String(right_value)) => {
-                    let res = [left_value.to_owned(), right_value.to_owned()].join("");
-                    Ok(LiteralType::String(res))
-                }
-                _ => Err(RuntimeError::new(
-                    expr.operator.to_owned(),
-                    "cannot add".to_owned(),
-                )),
-            },
-
-            _ => unreachable!(),
-        }
-    }
-
-    fn visit_variable_expr(&mut self, expr: &VariableExpr) -> Result<LiteralType, RuntimeError> {
-        Ok(self.environment_manager.get(&expr.name)?)
-    }
-
-    fn visit_assign_expr(&mut self, expr: &AssignExpr) -> Result<LiteralType, RuntimeError> {
-        let value = self.evaluate(expr.value.to_owned())?;
-
-        self.environment_manager
-            .assign(expr.name.to_owned(), value.to_owned())?;
-
-        Ok(value)
-    }
-
-    fn visit_logical_expr(&mut self, expr: &LogicalExpr) -> Result<LiteralType, RuntimeError> {
-        let left = self.evaluate(expr.left.to_owned())?;
-
-        if expr.operator.t_type == TokenType::Or {
-            if self.is_truthy(left.to_owned()) {
-                return Ok(left);
-            }
-        } else {
-            if !self.is_truthy(left.to_owned()) {
-                return Ok(left);
-            }
-        }
-
-        Ok(self.evaluate(expr.right.to_owned())?)
-    }
-
-    fn visit_call_expr(&mut self, expr: &CallExpr) -> Result<LiteralType, RuntimeError> {
-        let callee = self.evaluate(expr.callee.to_owned())?;
-        let mut args: Vec<LiteralType> = Vec::new();
-
-        for argument in expr.arguments.to_owned() {
-            args.push(self.evaluate(argument)?);
-        }
-
-        let arity = callee.arity(&expr.paren)?;
-
-        if args.len() == arity {
-            callee.call(self, &expr.paren, args)
-        } else {
-            Err(RuntimeError::new(
-                expr.paren.to_owned(),
-                format!("expected {} arguments but got {}", arity, args.len()),
-            ))
-        }
-    }
-}
-
-impl StmtVisitor<Result<(), RuntimeError>> for Interpreter {
-    fn visit_expression_smt(&mut self, stmt: &ExpressionStmt) -> Result<(), RuntimeError> {
-        self.evaluate(stmt.expression.to_owned())?;
-
-        Ok(())
-    }
-
-    fn visit_print_smt(&mut self, stmt: &PrintStmt) -> Result<(), RuntimeError> {
-        let value = self.evaluate(stmt.expression.to_owned())?;
-
-        match value {
-            LiteralType::Nil => println!("{}", "nil"),
-            LiteralType::Number(number_value) => println!("{}", number_value),
-            LiteralType::String(string_value) => println!("{}", string_value),
-            LiteralType::Bool(bool_value) => println!("{}", bool_value),
-            LiteralType::Function(declaration) => println!("<fn {}>", declaration.name.lexeme),
-        };
-
-        Ok(())
-    }
-
-    fn visit_var_decl_smt(&mut self, stmt: &VarDeclStmt) -> Result<(), RuntimeError> {
-        let mut value: LiteralType = LiteralType::Nil;
-
-        if let Some(initializer) = &stmt.initializer {
-            value = self.evaluate(initializer.to_owned())?;
-        }
-
-        self.environment_manager
-            .define(stmt.name.lexeme.to_owned(), value);
-
-        Ok(())
-    }
-
-    fn visit_while_smt(&mut self, stmt: &WhileSmt) -> Result<(), RuntimeError> {
-        if let Some(condition) = &stmt.condition {
-            let mut condition_value = self.evaluate(condition.to_owned())?;
-
-            while self.is_truthy(condition_value) {
-                self.execute(stmt.body.to_owned())?;
-
-                condition_value = self.evaluate(condition.to_owned())?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn visit_for_range_smt(&mut self, stmt: &ForRangeStmt) -> Result<(), RuntimeError> {
-        let start = self.evaluate(stmt.range_start.to_owned())?;
-        let end = self.evaluate(stmt.range_end.to_owned())?;
-
-        match (start, end) {
-            (LiteralType::Number(start_value), LiteralType::Number(end_value)) => {
-                self.environment_manager.add_env();
-
-                self.environment_manager.define(
-                    stmt.name.lexeme.to_owned(),
-                    LiteralType::Number(start_value),
-                );
-
-                for i in start_value as i32..(end_value + 1.0) as i32 {
-                    self.environment_manager
-                        .assign(stmt.name.to_owned(), LiteralType::Number(i as f32))?;
-
-                    self.execute(stmt.body.to_owned())?;
-                }
-
-                self.environment_manager.remove_env();
-
-                Ok(())
-            }
-            _ => Err(RuntimeError::new(
-                stmt.name.to_owned(),
-                "range must be a number".to_owned(),
-            )),
-        }
-    }
-
-    fn visit_block_smt(&mut self, stmt: &BlockStmt) -> Result<(), RuntimeError> {
-        self.execute_block(stmt.statements.to_owned())
-    }
-
-    fn visit_if_smt(&mut self, stmt: &IfStmt) -> Result<(), RuntimeError> {
-        let if_condition = self.evaluate(stmt.condition.to_owned())?;
-
-        if self.is_truthy(if_condition) {
-            self.execute(stmt.then_branch.to_owned())?;
-        } else if let Some(else_branch) = &stmt.else_branch {
-            self.execute(else_branch.to_owned())?;
-        }
-
-        Ok(())
-    }
-
-    fn visit_function_decl_stmt(
-        &mut self,
-        stmt: &crate::ast::FunctionDeclStmt,
-    ) -> Result<(), RuntimeError> {
-        let decl = FunctionDeclStmt::new(
-            stmt.name.to_owned(),
-            stmt.params.to_owned(),
-            stmt.body.to_owned(),
-        );
-
-        let function = LiteralType::Function(decl);
-        self.environment_manager
-            .define(stmt.name.lexeme.to_owned(), function);
-
-        Ok(())
     }
 }

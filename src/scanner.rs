@@ -242,7 +242,7 @@ impl Scanner {
         let text = self.source[self.start..self.current].to_owned();
 
         self.tokens
-            .push(Token::new(t_type, text, literal, self.line));
+            .push(Token::new(t_type, text, Box::new(literal), self.line));
     }
 
     fn is_at_end(&self) -> bool {
