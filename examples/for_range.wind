@@ -1,7 +1,7 @@
 var size = 16;
 
 for y in 0..size {
-    for x in 0..size {
+    for x in 0..size-y {
         print("*");
     }
 

@@ -15,7 +15,7 @@ fun multiply(n1, n2) {
 }
 
 fun divide(n1, n2) {
-    return n1 * n2;
+    return n1 / n2;
 }
 
 fun calculate(n1, n2, operator) {

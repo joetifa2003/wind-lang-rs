@@ -8,6 +8,6 @@ fun isEven(num) {
 
 for i in 0..10 {
     if isEven(i) {
-        print i;
+        println(i);
     }
 }
