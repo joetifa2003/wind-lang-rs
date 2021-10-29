@@ -1,0 +1,8 @@
+var x = 5;
+var y = 6;
+
+if y > x {
+    println("x is bigger than y");
+} else {
+    println("x is smaller than y");
+}

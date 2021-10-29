@@ -1,29 +1,11 @@
-use std::{process, rc::Rc};
+use std::rc::Rc;
 
 use crate::{
     ast::{Expr, Stmt},
-    error::WindError,
+    error::{ParseError, WindError},
     token::{Token, TokenType},
     types::LiteralType,
 };
-
-pub struct ParseError {
-    token: Token,
-    message: String,
-}
-
-impl ParseError {
-    pub fn new(token: Token, message: String) -> ParseError {
-        ParseError { token, message }
-    }
-}
-
-impl WindError for ParseError {
-    fn report(&self) {
-        eprintln!("[line {}]: {}", self.token.line, self.message);
-        process::exit(1);
-    }
-}
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -119,8 +101,8 @@ impl Parser {
             return Ok(self.if_statement()?);
         }
 
-        if self.match_token(&[TokenType::Print]) {
-            return Ok(self.print_statement()?);
+        if self.match_token(&[TokenType::Return]) {
+            return Ok(self.return_statement()?);
         }
 
         if self.match_token(&[TokenType::While]) {
@@ -157,11 +139,19 @@ impl Parser {
         })
     }
 
-    fn print_statement(&mut self) -> Result<Stmt, ParseError> {
-        let value = self.expression()?;
-        self.consume(TokenType::Semicolon, "expect ';' after value")?;
+    fn return_statement(&mut self) -> Result<Stmt, ParseError> {
+        let keyword = self.previous();
+        let mut value = Expr::Literal(LiteralType::Nil);
+        if !self.check(TokenType::Semicolon) {
+            value = self.expression()?;
+        }
 
-        Ok(Stmt::Print(Rc::new(value)))
+        self.consume(TokenType::Semicolon, "expect ';' after return value")?;
+
+        Ok(Stmt::Return {
+            keyword,
+            value: Rc::new(value),
+        })
     }
 
     fn for_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -299,6 +289,7 @@ impl Parser {
         } else if self.match_token(&[
             TokenType::PlusEqual,
             TokenType::MinusEqual,
+            TokenType::StarEqual,
             TokenType::SlashEqual,
             TokenType::PercentEqual,
         ]) {

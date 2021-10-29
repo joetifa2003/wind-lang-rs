@@ -1,8 +1,6 @@
-use crate::{
-    ast::Stmt,
-    interpreter::{Interpreter, RuntimeError},
-    token::Token,
-};
+use std::rc::Rc;
+
+use crate::{ast::Stmt, error::RuntimeError, interpreter::Interpreter, token::Token};
 
 #[derive(Clone)]
 pub enum LiteralType {
@@ -10,7 +8,14 @@ pub enum LiteralType {
     Number(f32),
     String(String),
     Bool(bool),
-    Function { deceleration: Stmt },
+    Function {
+        deceleration: Stmt,
+    },
+    NativeFunction {
+        name: String,
+        arity: usize,
+        func: Rc<dyn Fn(Vec<LiteralType>, Token) -> Result<LiteralType, RuntimeError>>,
+    },
 }
 
 impl LiteralType {
@@ -31,12 +36,24 @@ impl LiteralType {
                         .define(params[i].lexeme.to_owned(), args[i].to_owned());
                 }
 
-                interpreter.execute_block(&body)?;
+                match interpreter.execute_block(&body)? {
+                    Some(value) => {
+                        interpreter.environment_manager.remove_env();
+
+                        return Ok(value);
+                    }
+                    None => (),
+                }
 
                 interpreter.environment_manager.remove_env();
 
                 Ok(LiteralType::Nil)
             }
+            LiteralType::NativeFunction {
+                name: _,
+                arity: _,
+                func,
+            } => func(args, paren.to_owned()),
             _ => Err(RuntimeError::new(
                 paren.to_owned(),
                 "can only call functions and classes".to_owned(),
@@ -51,6 +68,11 @@ impl LiteralType {
 
                 Ok(params.len())
             }
+            LiteralType::NativeFunction {
+                name: _,
+                arity,
+                func: _,
+            } => Ok(*arity),
             _ => Err(RuntimeError::new(
                 paren.to_owned(),
                 "can only call functions and classes".to_owned(),

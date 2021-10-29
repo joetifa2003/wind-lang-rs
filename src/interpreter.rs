@@ -1,36 +1,13 @@
 mod environment;
 
-use std::process;
-
+use crate::error::{RuntimeError, WindError};
 use crate::{
     ast::{Expr, Stmt},
-    error::WindError,
     token::{Token, TokenType},
     types::LiteralType,
 };
 
 use self::environment::EnvironmentManger;
-
-pub struct RuntimeError {
-    token: Token,
-    message: String,
-}
-
-impl RuntimeError {
-    pub fn new(token: Token, message: String) -> RuntimeError {
-        RuntimeError { token, message }
-    }
-}
-
-impl WindError for RuntimeError {
-    fn report(&self) {
-        eprintln!(
-            "[line {}]: near '{}' {}",
-            self.token.line, self.token.lexeme, self.message
-        );
-        process::exit(1);
-    }
-}
 
 pub struct Interpreter {
     pub environment_manager: EnvironmentManger,
@@ -54,54 +31,41 @@ impl Interpreter {
         }
     }
 
-    fn execute(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
+    fn execute(&mut self, stmt: &Stmt) -> Result<Option<LiteralType>, RuntimeError> {
         match stmt {
             Stmt::Expression(expr) => {
-                self.evaluate(&*expr)?;
+                self.evaluate(expr)?;
 
-                Ok(())
-            }
-            Stmt::Print(expr) => {
-                let value = self.evaluate(&*expr)?;
-
-                match value {
-                    LiteralType::Nil => println!("{}", "nil"),
-                    LiteralType::Number(number_value) => println!("{}", number_value),
-                    LiteralType::String(string_value) => println!("{}", string_value),
-                    LiteralType::Bool(bool_value) => println!("{}", bool_value),
-                    LiteralType::Function { deceleration } => {
-                        let (name, _, _) = deceleration.as_function_decl().unwrap();
-                        println!("<fn {}>", name.lexeme)
-                    }
-                };
-
-                Ok(())
+                Ok(None)
             }
             Stmt::Block(statements) => self.execute_block(statements),
             Stmt::VarDecl { name, initializer } => {
                 let mut value: LiteralType = LiteralType::Nil;
 
                 if let Some(initializer) = initializer {
-                    value = self.evaluate(&*initializer)?;
+                    value = self.evaluate(initializer)?;
                 }
 
                 self.environment_manager
                     .define(name.lexeme.to_owned(), value);
 
-                Ok(())
+                Ok(None)
             }
             Stmt::While { condition, body } => {
                 if let Some(condition) = condition {
-                    let mut condition_value = self.evaluate(&*condition)?;
+                    let mut condition_value = self.evaluate(condition)?;
 
                     while self.is_truthy(&condition_value) {
-                        self.execute(&(*body))?;
+                        match self.execute(&(*body))? {
+                            Some(value) => return Ok(Some(value)),
+                            None => (),
+                        }
 
-                        condition_value = self.evaluate(&*condition)?;
+                        condition_value = self.evaluate(condition)?;
                     }
                 }
 
-                Ok(())
+                Ok(None)
             }
             Stmt::ForRange {
                 name,
@@ -109,8 +73,8 @@ impl Interpreter {
                 range_end,
                 body,
             } => {
-                let start = self.evaluate(&*range_start)?;
-                let end = self.evaluate(&*range_end)?;
+                let start = self.evaluate(range_start)?;
+                let end = self.evaluate(range_end)?;
 
                 match (start, end) {
                     (LiteralType::Number(start_value), LiteralType::Number(end_value)) => {
@@ -123,12 +87,18 @@ impl Interpreter {
                             self.environment_manager
                                 .assign(name.to_owned(), LiteralType::Number(i as f32))?;
 
-                            self.execute(&(*body))?;
+                            match self.execute(&(*body))? {
+                                Some(value) => {
+                                    self.environment_manager.remove_env();
+                                    return Ok(Some(value));
+                                }
+                                _ => {}
+                            }
                         }
 
                         self.environment_manager.remove_env();
 
-                        Ok(())
+                        Ok(None)
                     }
                     _ => Err(RuntimeError::new(
                         name.to_owned(),
@@ -141,15 +111,15 @@ impl Interpreter {
                 then_branch,
                 else_branch,
             } => {
-                let if_condition = self.evaluate(&*condition)?;
+                let if_condition = self.evaluate(condition)?;
 
                 if self.is_truthy(&if_condition) {
-                    self.execute(&(*then_branch))?;
+                    return Ok(self.execute(&(*then_branch))?);
                 } else if let Some(else_branch) = else_branch {
-                    self.execute(&(*else_branch))?;
+                    return Ok(self.execute(&(*else_branch))?);
                 }
 
-                Ok(())
+                Ok(None)
             }
             Stmt::FunctionDecl {
                 name,
@@ -163,26 +133,41 @@ impl Interpreter {
                 self.environment_manager
                     .define(name.lexeme.to_owned(), function);
 
-                Ok(())
+                Ok(None)
+            }
+            Stmt::Return { keyword: _, value } => {
+                let value = self.evaluate(value)?;
+
+                Ok(Some(value))
             }
         }
     }
 
-    pub fn execute_block(&mut self, statements: &Vec<Stmt>) -> Result<(), RuntimeError> {
+    pub fn execute_block(
+        &mut self,
+        statements: &Vec<Stmt>,
+    ) -> Result<Option<LiteralType>, RuntimeError> {
         self.environment_manager.add_env();
 
         for statement in statements {
-            self.execute(statement)?;
+            match self.execute(statement)? {
+                Some(value) => {
+                    self.environment_manager.remove_env();
+
+                    return Ok(Some(value));
+                }
+                _ => (),
+            };
         }
 
         self.environment_manager.remove_env();
 
-        Ok(())
+        Ok(None)
     }
 
     fn evaluate(&mut self, expr: &Expr) -> Result<LiteralType, RuntimeError> {
         match expr {
-            Expr::Group(expr) => self.evaluate(&**expr),
+            Expr::Group(expr) => self.evaluate(expr),
             Expr::Literal(value) => Ok(value.to_owned()),
             Expr::Variable(name) => Ok(self.environment_manager.get(&name)?),
             Expr::Binary {
@@ -190,8 +175,8 @@ impl Interpreter {
                 operator,
                 right,
             } => {
-                let left = self.evaluate(&*left)?;
-                let right = self.evaluate(&*right)?;
+                let left = self.evaluate(left)?;
+                let right = self.evaluate(right)?;
 
                 match operator.t_type {
                     TokenType::Minus | TokenType::MinusEqual => {
@@ -297,7 +282,7 @@ impl Interpreter {
                 }
             }
             Expr::Unary { operator, right } => {
-                let right = self.evaluate(&*right)?;
+                let right = self.evaluate(right)?;
 
                 match operator.t_type {
                     TokenType::Bang => Ok(LiteralType::Bool(self.is_truthy(&right))),
@@ -316,7 +301,7 @@ impl Interpreter {
                 paren,
                 args: arguments,
             } => {
-                let callee = self.evaluate(&**callee)?;
+                let callee = self.evaluate(callee)?;
                 let mut args: Vec<LiteralType> = Vec::new();
 
                 for argument in arguments {
@@ -335,7 +320,7 @@ impl Interpreter {
                 }
             }
             Expr::Assign { name, value } => {
-                let value = self.evaluate(&*value)?;
+                let value = self.evaluate(value)?;
 
                 self.environment_manager
                     .assign(name.to_owned(), value.to_owned())?;
@@ -347,7 +332,7 @@ impl Interpreter {
                 operator,
                 right,
             } => {
-                let left = self.evaluate(&*left)?;
+                let left = self.evaluate(left)?;
 
                 if operator.t_type == TokenType::Or {
                     if self.is_truthy(&left) {
@@ -359,7 +344,7 @@ impl Interpreter {
                     }
                 }
 
-                Ok(self.evaluate(&*right)?)
+                Ok(self.evaluate(right)?)
             }
         }
     }

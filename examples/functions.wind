@@ -1,0 +1,5 @@
+fun greet(name) {
+    return "Hello " + name + "!";
+}
+
+println(greet("Ahmed"));

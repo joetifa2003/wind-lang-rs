@@ -1,0 +1,23 @@
+var x = 16;
+var y = 2;
+
+println("x = " + str(x));
+println("y = " + str(y));
+
+println("");
+
+println("Math operations");
+println("x + y = " + str(x + y));
+println("x - y = " + str(x - y));
+println("x / y = " + str(x / y));
+println("x * y = " + str(x * y));
+println("x % y = " + str(x % y));
+
+println("");
+
+println("Variable operations");
+println("x += 1 | x = " + str(x += 1));
+println("x -= 1 | x = " + str(x -= 1));
+println("x *= 2 | x = " + str(x *= 2));
+println("x /= 2 | x = " + str(x /= 2));
+println("x %= 2 | x = " + str(x %= 2));

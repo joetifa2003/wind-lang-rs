@@ -36,7 +36,6 @@ pub enum Expr {
 #[derive(EnumAsInner, Clone)]
 pub enum Stmt {
     Expression(Rc<Expr>),
-    Print(Rc<Expr>),
     Block(Vec<Stmt>),
     VarDecl {
         name: Token,
@@ -61,5 +60,9 @@ pub enum Stmt {
         name: Token,
         params: Vec<Token>,
         body: Vec<Stmt>,
+    },
+    Return {
+        keyword: Token,
+        value: Rc<Expr>,
     },
 }

@@ -1,0 +1,3 @@
+var name = input_prompt("Enter your name: ");
+
+println("Hello " + name + "!");

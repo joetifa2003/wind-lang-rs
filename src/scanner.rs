@@ -1,25 +1,8 @@
-use std::process;
-
 use crate::{
+    error::{ScannerError, WindError},
     token::{Token, TokenType},
     types::LiteralType,
 };
-
-pub struct ScannerError {
-    line: i32,
-    message: String,
-}
-
-impl ScannerError {
-    fn new(line: i32, message: String) -> ScannerError {
-        ScannerError { line, message }
-    }
-
-    fn report(&self) {
-        eprintln!("[line {}]: {}", self.line, self.message);
-        process::exit(65);
-    }
-}
 
 pub struct Scanner {
     source: String,
@@ -203,7 +186,7 @@ impl Scanner {
             self.advance();
         }
 
-        if self.peak() == '.' && self.peak().is_numeric() {
+        if self.peak() == '.' && self.peak_next().is_numeric() {
             self.advance();
 
             while self.peak().is_numeric() {
@@ -267,6 +250,14 @@ impl Scanner {
         self.source.chars().nth(self.current).unwrap()
     }
 
+    fn peak_next(&self) -> char {
+        if self.is_at_end() {
+            return '\0';
+        }
+
+        self.source.chars().nth(self.current + 1).unwrap()
+    }
+
     fn match_keyword(&mut self, name: &str) -> TokenType {
         match name {
             "and" => TokenType::And,
@@ -280,7 +271,6 @@ impl Scanner {
             "if" => TokenType::If,
             "nil" => TokenType::Nil,
             "or" => TokenType::Or,
-            "print" => TokenType::Print,
             "return" => TokenType::Return,
             "super" => TokenType::Super,
             "this" => TokenType::This,

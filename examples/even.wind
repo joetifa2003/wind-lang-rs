@@ -1,0 +1,13 @@
+fun isEven(num) {
+    if num % 2 == 0 {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+for i in 0..10 {
+    if isEven(i) {
+        print i;
+    }
+}

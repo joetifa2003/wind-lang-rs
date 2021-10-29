@@ -1,0 +1,36 @@
+var num1 = int(input_prompt("Enter the first number: "));
+var num2 = int(input_prompt("Enter the second number: "));
+var operator = input_prompt("Enter the operator: ");
+
+fun plus(n1, n2) {
+    return n1 + n2;
+}
+
+fun minus(n1, n2) {
+    return n1 - n2;
+}
+
+fun multiply(n1, n2) {
+    return n1 * n2;
+}
+
+fun divide(n1, n2) {
+    return n1 * n2;
+}
+
+fun calculate(n1, n2, operator) {
+    if operator == "+" {
+        return plus(n1, n2);
+    } else if operator == "-" {
+        return minus(n1, n2);
+    } else if operator == "*" {
+        return multiply(n1, n2);
+    } else if operator == "/" {
+        return divide(n1, n2);
+    } else {
+        return "Invalid operator";
+    }
+}
+
+
+println(calculate(num1, num2, operator));
