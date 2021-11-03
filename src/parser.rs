@@ -121,9 +121,9 @@ impl Parser {
     }
 
     fn if_statement(&mut self) -> Result<Stmt, ParseError> {
-        // self.consume(TokenType::LeftParen, "expect '(' after 'if'")?;
+        self.consume_optional(TokenType::LeftParen);
         let condition = self.expression()?;
-        // self.consume(TokenType::RightParen, "expect ')' after 'if'")?;
+        self.consume_optional(TokenType::RightParen);
 
         let then_branch = self.statement()?;
         let mut else_branch: Option<Rc<Stmt>> = None;
@@ -155,11 +155,18 @@ impl Parser {
     }
 
     fn for_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.consume_optional(TokenType::LeftParen);
+
+        let stmt: Stmt;
         if self.check(TokenType::Identifier) {
-            return self.range_for_loop();
+            stmt = self.range_for_loop()?;
         } else {
-            return self.manual_for_loop();
+            stmt = self.manual_for_loop()?;
         }
+
+        self.consume_optional(TokenType::RightParen);
+
+        Ok(stmt)
     }
 
     fn range_for_loop(&mut self) -> Result<Stmt, ParseError> {
@@ -228,9 +235,9 @@ impl Parser {
     }
 
     fn while_statement(&mut self) -> Result<Stmt, ParseError> {
-        // self.consume(TokenType::LeftParen, "expect '(' after 'while'")?;
+        self.consume_optional(TokenType::LeftParen);
         let condition = self.expression()?;
-        // self.consume(TokenType::RightParen, "expect ')' after 'while'")?;
+        self.consume_optional(TokenType::RightParen);
 
         let body = self.statement()?;
 
@@ -559,5 +566,11 @@ impl Parser {
         }
 
         Err(ParseError::new(self.peak().to_owned(), message.to_owned()))
+    }
+
+    fn consume_optional(&mut self, token_type: TokenType) {
+        if self.check(token_type) {
+            self.advance();
+        }
     }
 }

@@ -1,4 +1,8 @@
-mod environment;
+pub(crate) mod environment;
+mod stdlib;
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::error::{RuntimeError, WindError};
 use crate::{
@@ -7,16 +11,22 @@ use crate::{
     types::LiteralType,
 };
 
-use self::environment::EnvironmentManger;
+use self::environment::Environment;
+use self::stdlib::{Print, PrintLn, StdLibFunc};
 
 pub struct Interpreter {
-    pub environment_manager: EnvironmentManger,
+    pub environment: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
+        let mut global_env = Environment::new();
+
+        global_env.define(PrintLn::name(), PrintLn::function());
+        global_env.define(Print::name(), Print::function());
+
         Interpreter {
-            environment_manager: EnvironmentManger::new(),
+            environment: Rc::new(RefCell::new(global_env)),
         }
     }
 
@@ -38,7 +48,10 @@ impl Interpreter {
 
                 Ok(None)
             }
-            Stmt::Block(statements) => self.execute_block(statements),
+            Stmt::Block(statements) => self.execute_block(
+                statements,
+                Environment::with_enclosing(self.environment.clone()),
+            ),
             Stmt::VarDecl { name, initializer } => {
                 let mut value: LiteralType = LiteralType::Nil;
 
@@ -46,7 +59,8 @@ impl Interpreter {
                     value = self.evaluate(initializer)?;
                 }
 
-                self.environment_manager
+                self.environment
+                    .borrow_mut()
                     .define(name.lexeme.to_owned(), value);
 
                 Ok(None)
@@ -78,26 +92,30 @@ impl Interpreter {
 
                 match (start, end) {
                     (LiteralType::Number(start_value), LiteralType::Number(end_value)) => {
-                        self.environment_manager.add_env();
+                        let prev = self.environment.clone();
 
-                        self.environment_manager
+                        self.environment = Environment::with_enclosing(self.environment.clone());
+
+                        self.environment
+                            .borrow_mut()
                             .define(name.lexeme.to_owned(), LiteralType::Number(start_value));
 
                         for i in start_value as i32..(end_value + 1.0) as i32 {
-                            self.environment_manager
+                            self.environment
+                                .borrow_mut()
                                 .assign(name.to_owned(), LiteralType::Number(i as f32))?;
 
                             match self.execute(&(*body))? {
                                 Some(value) => {
-                                    self.environment_manager.remove_env();
+                                    self.environment = prev;
+
                                     return Ok(Some(value));
                                 }
                                 _ => {}
                             }
                         }
 
-                        self.environment_manager.remove_env();
-
+                        self.environment = prev;
                         Ok(None)
                     }
                     _ => Err(RuntimeError::new(
@@ -130,7 +148,8 @@ impl Interpreter {
                     deceleration: stmt.to_owned(),
                 };
 
-                self.environment_manager
+                self.environment
+                    .borrow_mut()
                     .define(name.lexeme.to_owned(), function);
 
                 Ok(None)
@@ -146,13 +165,16 @@ impl Interpreter {
     pub fn execute_block(
         &mut self,
         statements: &Vec<Stmt>,
+        environment: Rc<RefCell<Environment>>,
     ) -> Result<Option<LiteralType>, RuntimeError> {
-        self.environment_manager.add_env();
+        let previous = self.environment.clone();
+
+        self.environment = environment;
 
         for statement in statements {
             match self.execute(statement)? {
                 Some(value) => {
-                    self.environment_manager.remove_env();
+                    self.environment = previous;
 
                     return Ok(Some(value));
                 }
@@ -160,7 +182,7 @@ impl Interpreter {
             };
         }
 
-        self.environment_manager.remove_env();
+        self.environment = previous;
 
         Ok(None)
     }
@@ -169,7 +191,7 @@ impl Interpreter {
         match expr {
             Expr::Group(expr) => self.evaluate(expr),
             Expr::Literal(value) => Ok(value.to_owned()),
-            Expr::Variable(name) => Ok(self.environment_manager.get(&name)?),
+            Expr::Variable(name) => Ok(self.environment.borrow().get(&name)?),
             Expr::Binary {
                 left,
                 operator,
@@ -322,7 +344,8 @@ impl Interpreter {
             Expr::Assign { name, value } => {
                 let value = self.evaluate(value)?;
 
-                self.environment_manager
+                self.environment
+                    .borrow_mut()
                     .assign(name.to_owned(), value.to_owned())?;
 
                 Ok(value.to_owned())

@@ -1,3 +1,11 @@
 {
-  "cSpell.words": ["arity", "hashbrown", "Paren", "pprof", "protos"]
+    "cSpell.words": [
+        "arity",
+        "funcs",
+        "hashbrown",
+        "Paren",
+        "pprof",
+        "protos",
+        "stdlib"
+    ]
 }

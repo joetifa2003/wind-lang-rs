@@ -1,6 +1,11 @@
-use std::rc::Rc;
+use std::{fmt::Display, rc::Rc};
 
-use crate::{ast::Stmt, error::RuntimeError, interpreter::Interpreter, token::Token};
+use crate::{
+    ast::Stmt,
+    error::RuntimeError,
+    interpreter::{environment::Environment, Interpreter},
+    token::Token,
+};
 
 #[derive(Clone)]
 pub enum LiteralType {
@@ -18,6 +23,31 @@ pub enum LiteralType {
     },
 }
 
+impl Display for LiteralType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                LiteralType::Nil => "nil".to_owned(),
+                LiteralType::Number(number_value) => format!("{}", number_value),
+                LiteralType::String(string_value) => format!("{}", string_value),
+                LiteralType::Bool(bool_value) => format!("{}", bool_value),
+                LiteralType::Function { deceleration } => {
+                    let (name, _, _) = deceleration.as_function_decl().unwrap();
+
+                    format!("<fn {}>", name.lexeme)
+                }
+                LiteralType::NativeFunction {
+                    name,
+                    arity: _,
+                    func: _,
+                } => format!("<fn {}>", name),
+            }
+        )
+    }
+}
+
 impl LiteralType {
     pub fn call(
         &self,
@@ -28,24 +58,20 @@ impl LiteralType {
         match self {
             LiteralType::Function { deceleration } => {
                 let (_, params, body) = deceleration.as_function_decl().unwrap();
-                interpreter.environment_manager.add_env();
+                let environment = Environment::with_enclosing(interpreter.environment.clone());
 
                 for i in 0..params.len() {
-                    interpreter
-                        .environment_manager
+                    environment
+                        .borrow_mut()
                         .define(params[i].lexeme.to_owned(), args[i].to_owned());
                 }
 
-                match interpreter.execute_block(&body)? {
+                match interpreter.execute_block(&body, environment)? {
                     Some(value) => {
-                        interpreter.environment_manager.remove_env();
-
                         return Ok(value);
                     }
                     None => (),
                 }
-
-                interpreter.environment_manager.remove_env();
 
                 Ok(LiteralType::Nil)
             }

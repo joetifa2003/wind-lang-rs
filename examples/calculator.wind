@@ -32,5 +32,4 @@ fun calculate(n1, n2, operator) {
     }
 }
 
-
 println(calculate(num1, num2, operator));
