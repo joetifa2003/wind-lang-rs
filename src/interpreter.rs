@@ -12,7 +12,7 @@ use crate::{
 };
 
 use self::environment::Environment;
-use self::stdlib::{Print, PrintLn, StdLibFunc};
+use self::stdlib::{Input, InputPrompt, Int, Print, PrintLn, StdLibFunc, Str};
 
 pub struct Interpreter {
     pub environment: Rc<RefCell<Environment>>,
@@ -22,8 +22,12 @@ impl Interpreter {
     pub fn new() -> Interpreter {
         let mut global_env = Environment::new();
 
+        global_env.define(Input::name(), Input::function());
+        global_env.define(InputPrompt::name(), InputPrompt::function());
         global_env.define(PrintLn::name(), PrintLn::function());
         global_env.define(Print::name(), Print::function());
+        global_env.define(Int::name(), Int::function());
+        global_env.define(Str::name(), Str::function());
 
         Interpreter {
             environment: Rc::new(RefCell::new(global_env)),
