@@ -74,7 +74,7 @@ impl Interpreter {
                     let mut condition_value = self.evaluate(condition)?;
 
                     while self.is_truthy(&condition_value) {
-                        match self.execute(&(*body))? {
+                        match self.execute(body)? {
                             Some(value) => return Ok(Some(value)),
                             None => (),
                         }
